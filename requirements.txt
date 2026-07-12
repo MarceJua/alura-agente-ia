@@ -3,3 +3,4 @@ langchain-community
 langchain-cohere
 chromadb
 python-dotenv
+streamlit

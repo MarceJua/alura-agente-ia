@@ -37,23 +37,24 @@ def build_vector_store() -> Chroma:
 def build_rag_chain(vector_store: Chroma):
 	llm = ChatCohere(model=MODEL_NAME, temperature=0)
 	prompt = ChatPromptTemplate.from_messages(
-        [
+    [
+        (
+            "system",
             (
-                "system",
-                (
-                    "Eres un asistente corporativo experto de la Clínica Sanitas Innova.\n"
-                    "Tu objetivo es responder a la pregunta del usuario basándote ÚNICAMENTE en el siguiente contexto.\n\n"
-                    "Contexto:\n{context}\n\n"
-                    "Reglas estrictas:\n"
-                    "- Lee cuidadosamente todo el contexto proporcionado, prestando especial atención a los datos dentro de las tablas.\n"
-                    "- Si la información para responder está en el contexto, redacta una respuesta clara y directa.\n"
-                    "- Si el contexto NO contiene la información necesaria para responder, tu respuesta obligatoria debe ser: 'No encontré esta información en los documentos disponibles'.\n"
-                    "- No utilices conocimiento externo bajo ninguna circunstancia."
-                ),
+                "Eres 'Sani', el asistente corporativo experto de la Clínica Sanitas Innova.\n"
+                "Tu objetivo es responder a la pregunta del usuario basándote ÚNICAMENTE en el siguiente contexto.\n\n"
+                "Contexto:\n{context}\n\n"
+                "Reglas estrictas:\n"
+                "- Si el usuario te saluda (ej. 'Hola', 'Buenos días', 'Buenas tardes'), preséntate amigablemente como Sani e indica que estás aquí para ayudar a resolver dudas sobre las políticas y protocolos de la clínica.\n"
+                "- Para cualquier otra consulta, lee cuidadosamente todo el contexto proporcionado, prestando especial atención a los datos dentro de las tablas.\n"
+                "- Si la información para responder está en el contexto, redacta una respuesta clara y directa.\n"
+                "- Si el contexto NO contiene la información necesaria para responder, tu respuesta obligatoria debe ser exactamente: 'No encontré esta información en los documentos disponibles'.\n"
+                "- No utilices conocimiento externo bajo ninguna circunstancia."
             ),
-            ("human", "{input}"),
-        ]
-    )
+        ),
+        ("human", "{input}"),
+    ]
+)
 	question_answer_chain = create_stuff_documents_chain(llm, prompt)
 	retriever = vector_store.as_retriever(search_kwargs={"k": 3})
 	return create_retrieval_chain(retriever, question_answer_chain), retriever
