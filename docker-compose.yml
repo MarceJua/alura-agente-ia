@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  agente-sanitas:
+    build: .
+    container_name: sanitas_innova_ai
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      # Esto permite que el archivo de logs persista fuera del contenedor
+      - ./logs:/app/logs
+    restart: unless-stopped

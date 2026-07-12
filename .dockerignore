@@ -1,0 +1,25 @@
+# Entornos virtuales
+venv/
+env/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Variables de entorno (¡Nunca subas tus API Keys!)
+.env
+
+# Bases de datos vectoriales locales (Chroma, etc.)
+chroma_db/
+*.sqlite3
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Logs de ejecución
+logs/
+*.jsonl
