@@ -4,63 +4,47 @@ Este repositorio contiene la solución completa para el **Challenge Alura Agente
 
 ---
 
-## 🚀 Arquitectura del Sistema
+## Arquitectura de la Solución
 
-La solución implementa una tubería RAG robusta estructurada en cinco etapas clave para evitar la alucinación de datos y garantizar respuestas confiables y auditables:
+El sistema está diseñado en módulos débilmente acoplados que separan la ingesta de documentos, el motor de recuperación y la interfaz de usuario. El despliegue en la nube se apoya en Docker, Nginx y una instancia de Google Compute Engine para mantener el acceso controlado y estable.
 
-```
-                  ┌─────────────────────────────────────────────────────────┐
-                  │                 Documentos Fuente                       │
-                  │  (POL-PRIV-001.md / PROT-MED-004.md)                    │
-                  └──────────────────────────┬──────────────────────────────┘
-                                             │
-                                             ▼
-                  ┌─────────────────────────────────────────────────────────┐
-                  │     Procesamiento: Markdown Chunking & Metadatos         │
-                  │     (Filtro de secciones + Inyección de metadatos)      │
-                  └──────────────────────────┬──────────────────────────────┘
-                                             │
-                                             ▼
-                  ┌─────────────────────────────────────────────────────────┐
-                  │              Indexación: Embeddings                     │
-                  │  (Generación de vectores y almacenamiento en Qdrant/Chroma)│
-                  └──────────────────────────┬──────────────────────────────┘
-                                             │
-                                             ▼
-    ┌──────────────────┐                     │
-    │  Pregunta del    ├─────────────────────┼──────────────────┐
-    │  Colaborador     │                     │                  │
-    └────────┬─────────┘                     ▼                  │
-             │                    ┌──────────────────────┐      │
-             │                    │ Recuperación Semántica│      │
-             │                    │  (Búsqueda Vectorial)│      │
-             │                    └──────────┬───────────┘      │
-             │                               │                  │
-             │                               ▼                  │
-             │                    ┌──────────────────────┐      │
-             │                    │ Reranker (Cohere)    │      │
-             │                    │ (Ordena Relevancia)  │      │
-             │                    └──────────┬───────────┘      │
-             │                               │                  │
-             └───────────────┬───────────────┘                  │
-                             │ Contexo Filtrado                 │ Fallback
-                             ▼                                  ▼
-                  ┌─────────────────────────────────────────────────────────┐
-                  │            Generación Controlada (LLM)                  │
-                  │   (Validación estricta de fuentes / Respuesta en chat)  │
-                  └──────────────────────────┬──────────────────────────────┘
-                                             │
-                                             ▼
-                  ┌─────────────────────────────────────────────────────────┐
-                  │          Respuesta Grounded + Citación de Fuentes       │
-                  └─────────────────────────────────────────────────────────┘
+### Diagrama de Flujo RAG (Generación Aumentada por Recuperación)
+
+```mermaid
+graph TD
+    subgraph Ingesta de Datos
+        A[Documentos Markdown<br/>POL-PRIV-001 / PROT-MED-004] --> B(MarkdownHeaderTextSplitter<br/>Chunking con Metadatos)
+        B --> C[Cohere Embeddings<br/>embed-multilingual-v3.0]
+        C --> D[(ChromaDB<br/>Base de Datos Vectorial)]
+    end
+
+    subgraph Interacción del Usuario
+        E[Usuario Colaborador] -->|Pregunta en lenguaje natural| F[Interfaz Streamlit]
+        F --> G{Búsqueda Semántica}
+        D -->|Retorna Top 3 Chunks| G
+        G --> H[Cohere LLM<br/>command-r-plus-08-2024]
+        H -->|Prompt Estricto Anti-Alucinación| I[Respuesta Generada + Fuentes]
+        I --> F
+    end
+
+    classDef database fill:#f9f,stroke:#333,stroke-width:2px;
+  class D database;
 ```
 
-1. **Ingesta y Limpieza:** Extracción estructurada del contenido en Markdown, aislando metadatos críticos como códigos de protocolo, áreas clínicas, responsables (DPO) y vigencia.
-2. **Chunking Semántico:** División del texto mediante un divisor lógico respetando la estructura de encabezados para mantener la cohesión de los datos.
-3. **Indexación Vectorial:** Conversión de texto en vectores densos almacenados en una base de datos vectorial con indexación de metadatos para filtrado previo.
-4. **Recuperación y Reranking:** Búsqueda híbrida (semántica + filtros de metadatos) combinada con un modelo _Reranker_ para priorizar los fragmentos con mayor relevancia clínica.
-5. **Generación Grounded:** Prompting restrictivo que obliga al LLM a responder basándose única y exclusivamente en el contexto recuperado, retornando un mensaje de _fallback_ configurado si la información no existe.
+### Arquitectura de Despliegue en la Nube (GCP)
+
+```mermaid
+graph LR
+  Usuario(("Usuario Web")) -->|HTTP:80| Nginx["Nginx Proxy Inverso<br/>Rate Limiting: 30r/s"]
+  Nginx -->|Proxy Pass:8501| Docker["Contenedor Docker"]
+
+  subgraph "Servidor Ubuntu 22.04 LTS (Google Compute Engine)"
+    Docker --> App["Streamlit App + LangChain RAG"]
+    App <--> LocalDB[("ChromaDB Local")]
+  end
+
+  App <-->|API Rest| CohereCloud(("API Cohere"))
+```
 
 ---
 
@@ -68,105 +52,102 @@ La solución implementa una tubería RAG robusta estructurada en cinco etapas cl
 
 El agente está construido con herramientas modernas, modulares y de alto rendimiento en el ecosistema de IA:
 
-- **Lenguaje:** Python 3.12
-- **Orquestación LLM/RAG:** LangChain
-- **Base de Datos Vectorial:** Qdrant o Chroma (local) / Oracle Autonomous Database (en la nube)
-- **Modelos de Embeddings y Generación:** OpenAI (GPT-4o) / Cohere (Rerank-v3)
-- **Interfaz de Usuario:** Streamlit (interfaz ágil, directa y enfocada en datos)
-- **Contenerización y Despliegue:** Docker, OCI Container Registry y OCI Compute
+- **Lenguaje Base:** Python 3.12
+- **Framework de IA:** LangChain
+- **Modelos de Lenguaje (LLM):** Cohere (`command-r-plus-08-2024` y `embed-multilingual-v3.0`)
+- **Base de Datos Vectorial:** ChromaDB
+- **Procesamiento de Documentos:** `MarkdownHeaderTextSplitter` para mantener la integridad de las tablas y secciones
+- **Interfaz Gráfica:** Streamlit
+- **Contenerización:** Docker y Docker Compose
+- **Despliegue y Seguridad:** Google Cloud Platform (Compute Engine), Nginx (proxy inverso) y Fail2Ban
 
 ---
 
-## 💻 Instrucciones de Ejecución Local
+## 💻 Instrucciones para Ejecutar el Proyecto
 
-Sigue estos pasos para levantar el agente localmente en tu máquina de desarrollo:
+### Opción 1: Ejecución Rápida (Docker Compose)
 
-### 1. Clonar el repositorio y configurar variables de entorno
+1. Clona el repositorio:
 
 ```bash
-git clone https://github.com/tu-usuario/alura-agente-clinica.git
-cd alura-agente-clinica
-cp .env.example .env
+git clone https://github.com/MarceJua/alura-agente-ia.git
+cd alura-agente-ia
 ```
 
-_Edita el archivo `.env` con tus llaves de API necesarias (`OPENAI_API_KEY`, `COHERE_API_KEY`, etc.)._
+2. Crea el archivo `.env` en la raíz y añade tu llave de Cohere:
 
-### 2. Crear y activar el entorno virtual
+```
+COHERE_API_KEY=tu_clave_aqui
+```
+
+3. Construye y levanta el contenedor:
+
+```bash
+docker-compose up -d --build
+```
+
+4. Abre tu navegador en `http://localhost:8501`.
+
+### Opción 2: Desarrollo Local (Entorno Virtual)
+
+1. Crea y activa tu entorno virtual:
 
 ```bash
 python -m venv venv
-source venv/bin/activate  # En Windows usa: venv\Scripts\activate
+source venv/bin/activate
 ```
 
-### 3. Instalar las dependencias del proyecto
+2. Instala las dependencias:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Indexar los documentos de la Clínica "Sanitas Innova"
+3. Crea la base de datos vectorial ejecutando la ingesta:
 
 ```bash
-python scripts/ingest_knowledge_base.py
+python src/vector_store.py
 ```
 
-_Este comando procesará el archivo `clinica-knowledge-base.md`, generará los embeddings e indexará los chunks en la base de datos vectorial._
-
-### 5. Iniciar la interfaz conversacional
+4. Inicia la aplicación:
 
 ```bash
 streamlit run app.py
 ```
 
-Abre tu navegador en `http://localhost:8501` para comenzar a interactuar con el asistente clínico.
+---
+
+## ❓ Ejemplos de Preguntas y Respuestas del Agente
+
+El agente cuenta con reglas estrictas para garantizar respuestas fidedignas o disparar un mensaje de contención (_fallback_) si la información no existe en la base de conocimientos.
+
+**Pregunta 1 (Extracción desde Tablas):**
+
+> **Usuario:** _¿Cuáles son las instrucciones de ayuno para una Endoscopía?_
+> **Agente:** Para la preparación de una Endoscopía Digestiva Alta, se requiere un ayuno estricto de **8 horas**, absteniéndose de consumir sólidos y líquidos, incluyendo agua y chicles. Además, se deben suspender los antiácidos 24 horas antes.
+
+**Pregunta 2 (Política de Retención):**
+
+> **Usuario:** _¿Cuánto tiempo se guardan las fichas clínicas físicas?_
+> **Agente:** Según el documento POL-PRIV-001, las fichas clínicas físicas e históricas en papel se almacenan en bodega centralizada durante un máximo de **5 años** tras su digitalización, luego de lo cual se destruyen mediante triturado certificado.
+
+**Pregunta 3 (Manejo de Alucinaciones - Información Inexistente):**
+
+> **Usuario:** _¿Cuántos días de vacaciones tienen los médicos?_
+> **Agente:** No encontré esta información en los documentos disponibles.
 
 ---
 
-## ❓ Casos de Prueba y Respuestas del Agente
+## ☁️ Evidencia del Deploy en la Nube
 
-Para validar la precisión del sistema y garantizar que no existan alucinaciones, puedes realizar las siguientes preguntas de control al agente:
+_Nota: Por motivos de optimización de créditos promocionales y disponibilidad de instancias (Agotamiento de cuota Ampere A1), la aplicación se desplegó utilizando **Google Cloud Platform (GCP)** en lugar de OCI, manteniendo los mismos estándares de contenedorización._
 
-### Caso de Prueba 1: Conservación de datos confidenciales
+**Aplicación En Vivo:**
+🔗 [**http://34.26.211.63**](https://www.google.com/search?q=http://34.26.211.63)
 
-- **Pregunta del Colaborador:** _"¿Durante cuánto tiempo debemos conservar las fichas clínicas electrónicas y en qué condiciones se eliminan los registros físicos en papel?"_
-- **Respuesta Esperada del Agente:**
-  > Basado en la Política de Privacidad **POL-PRIV-001 (Sección 1.2)**, las fichas clínicas electrónicas se deben conservar de forma obligatoria por un período mínimo de **15 años** desde la última interacción médica del paciente. Los registros físicos en papel se resguardan por **5 años**, tras lo cual se destruyen de manera segura mediante un proceso de **trituración industrial con certificación de destrucción confidencial**.
-
-### Caso de Prueba 2: Instrucciones de ayuno médico
-
-- **Pregunta del Colaborador:** _"Tengo un paciente de Gastroenterología programado para una Endoscopía Digestiva Alta. ¿Cuáles son las instrucciones de ayuno y qué medicamentos tiene prohibidos?"_
-- **Respuesta Esperada del Agente:**
-  > De acuerdo con el protocolo de preparación **PROT-MED-004 (Área de Gastroenterología)**, las instrucciones obligatorias son:
-  >
-  > 1. **Ayuno:** Ayuno absoluto de sólidos y líquidos de al menos **8 horas** antes de la intervención.
-  > 2. **Medicación Suspendida:** Se prohíbe la ingesta de **antiácidos y protectores gástricos (como el omeprazol)** en las **24 horas previas** al procedimiento. Se permite la toma de medicación crítica con un sorbo mínimo de agua (máximo 50 ml) hasta 3 horas antes del examen.
-
-### Caso de Prueba 3: Manejo de Alucinaciones (Fuera de Ámbito)
-
-- **Pregunta del Colaborador:** _"¿Cuál es la política de la clínica para el reembolso de estacionamiento de los médicos?"_
-- **Respuesta Esperada del Agente:**
-  > **[Código Fallback: INF-NO-DISP]** Lo siento, no he encontrado información sobre la política de reembolso de estacionamiento para médicos en los documentos de gobernanza y protocolos clínicos disponibles en mi base de datos actual. Si esta información pertenece al área de Recursos Humanos o Finanzas, por favor póngase en contacto con el administrador del área correspondiente.
-
----
-
-## ☁️ Despliegue en la Nube (Oracle Cloud Infrastructure - OCI)
-
-El proyecto se encuentra completamente productivo e implementado de forma segura en la infraestructura de **OCI**.
-
-### Componentes de OCI Utilizados:
-
-- **OCI Container Registry (OCIR):** Almacenamiento seguro de la imagen Docker de producción del agente.
-- **OCI Compute:** Instancia de máquina virtual escalable configurada dentro de una red privada virtual (VCN).
-- **OCI Vault:** Gestión cifrada de credenciales de API para mitigar riesgos de seguridad.
-- **OCI Object Storage:** Repositorio en la nube para almacenamiento y sincronización automática de los documentos de conocimiento originales.
-
-### 📸 Evidencia de Ejecución en la Nube
-
-Aquí se presenta la captura de pantalla de la interfaz conversacional de Sanitas Innova respondiendo consultas de manera segura desde la instancia desplegada en la nube:
-
-![Evidencia de Ejecución en la Nube](https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&q=80&w=1000)
-
-_(Reemplazar por el enlace real del GIF o captura de pantalla obtenido tras el despliegue final en OCI)_
+**Captura de Pantalla del Funcionamiento:**
+![Sani-Alura](docs/Sani-Alura.png)
+![Sani-Alura](docs/Sani-Alura2.png)
 
 ---
 
